@@ -298,12 +298,20 @@ export class FeishuChannel implements Channel {
     timestamp: string,
     group: RegisteredGroup,
   ): void {
-    const content = JSON.parse(message.content ?? '{}') as { image_key?: string };
+    const content = JSON.parse(message.content ?? '{}') as {
+      image_key?: string;
+    };
     const imageKey = content.image_key ?? '';
     const messageId: string = message.message_id;
     const filename = `image_${messageId}.jpg`;
 
-    this.downloadFeishuResource(messageId, imageKey, 'image', group.folder, filename)
+    this.downloadFeishuResource(
+      messageId,
+      imageKey,
+      'image',
+      group.folder,
+      filename,
+    )
       .then((filePath) => {
         const text = filePath ? `[Image] (${filePath})` : '[Image]';
         this.deliver(chatJid, text, senderId, timestamp, messageId);
@@ -329,25 +337,78 @@ export class FeishuChannel implements Channel {
     const fileName = content.file_name ?? `file_${message.message_id}`;
     const messageId: string = message.message_id;
 
-    this.downloadFeishuResource(messageId, fileKey, 'file', group.folder, fileName)
+    this.downloadFeishuResource(
+      messageId,
+      fileKey,
+      'file',
+      group.folder,
+      fileName,
+    )
       .then((filePath) => {
-        const text = filePath ? `[File: ${fileName}] (${filePath})` : `[File: ${fileName}]`;
+        const text = filePath
+          ? `[File: ${fileName}] (${filePath})`
+          : `[File: ${fileName}]`;
         this.deliver(chatJid, text, senderId, timestamp, messageId);
       })
       .catch((err: unknown) => {
         logger.error({ err }, 'Unexpected error in file handler');
-        this.deliver(chatJid, `[File: ${fileName}]`, senderId, timestamp, messageId);
+        this.deliver(
+          chatJid,
+          `[File: ${fileName}]`,
+          senderId,
+          timestamp,
+          messageId,
+        );
       });
   }
 
-  // Stub for audio handler — implemented in Task 7
   private handleAudio(
-    _m: any,
-    _j: string,
-    _s: string,
-    _t: string,
-    _g: RegisteredGroup,
-  ): void {}
+    message: any,
+    chatJid: string,
+    senderId: string,
+    timestamp: string,
+    group: RegisteredGroup,
+  ): void {
+    const content = JSON.parse(message.content ?? '{}') as { file_key?: string };
+    const fileKey = content.file_key ?? '';
+    const messageId: string = message.message_id;
+    const filename = `audio_${messageId}.opus`;
+
+    this.downloadFeishuResource(messageId, fileKey, 'file', group.folder, filename)
+      .then(async (filePath) => {
+        if (!filePath) {
+          this.deliver(
+            chatJid,
+            '[Voice message - transcription failed]',
+            senderId,
+            timestamp,
+            messageId,
+          );
+          return;
+        }
+        const attachFilename = filePath.split('/').pop()!;
+        const hostPath = path.join(
+          resolveGroupFolderPath(group.folder),
+          'attachments',
+          attachFilename,
+        );
+        const transcript = await transcribeAudio(hostPath);
+        const text = transcript
+          ? `[Voice: ${transcript}]`
+          : '[Voice message - transcription failed]';
+        this.deliver(chatJid, text, senderId, timestamp, messageId);
+      })
+      .catch((err: unknown) => {
+        logger.error({ err }, 'Unexpected error in audio handler');
+        this.deliver(
+          chatJid,
+          '[Voice message - transcription failed]',
+          senderId,
+          timestamp,
+          messageId,
+        );
+      });
+  }
 
   async sendMessage(jid: string, text: string): Promise<void> {
     const chatId = jid.replace(/^fs:/, '');
