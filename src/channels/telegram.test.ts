@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 // --- Mocks ---
 
+// Mock transcription module
+const mockTranscribeAudio = vi.hoisted(() => vi.fn());
+vi.mock('../transcription.js', () => ({ transcribeAudio: mockTranscribeAudio }));
+
 // Mock registry (registerChannel runs at import time)
 vi.mock('./registry.js', () => ({ registerChannel: vi.fn() }));
 
@@ -26,9 +30,10 @@ vi.mock('../logger.js', () => ({
 
 // Mock group-folder (used by downloadFile)
 vi.mock('../group-folder.js', () => ({
-  resolveGroupFolderPath: vi.fn((folder: string) => `/tmp/test-groups/${folder}`),
+  resolveGroupFolderPath: vi.fn(
+    (folder: string) => `/tmp/test-groups/${folder}`,
+  ),
 }));
-
 
 // --- Grammy mock ---
 
@@ -200,10 +205,13 @@ describe('TelegramChannel', () => {
     vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
 
     // Mock global fetch for file downloads
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -678,7 +686,12 @@ describe('TelegramChannel', () => {
       await channel.connect();
 
       const ctx = createMediaCtx({
-        extra: { photo: [{ file_id: 'small_id', width: 90 }, { file_id: 'large_id', width: 800 }] },
+        extra: {
+          photo: [
+            { file_id: 'small_id', width: 90 },
+            { file_id: 'large_id', width: 800 },
+          ],
+        },
       });
       await triggerMediaMessage('message:photo', ctx);
       await flushPromises();
@@ -707,7 +720,8 @@ describe('TelegramChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({
-          content: '[Photo] (/workspace/group/attachments/photo_1.jpg) Look at this',
+          content:
+            '[Photo] (/workspace/group/attachments/photo_1.jpg) Look at this',
         }),
       );
     });
@@ -738,7 +752,9 @@ describe('TelegramChannel', () => {
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.getFile.mockResolvedValueOnce({ file_path: 'documents/file_0.pdf' });
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'documents/file_0.pdf',
+      });
 
       const ctx = createMediaCtx({
         extra: { document: { file_name: 'report.pdf', file_id: 'doc_id' } },
@@ -750,7 +766,8 @@ describe('TelegramChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({
-          content: '[Document: report.pdf] (/workspace/group/attachments/report.pdf)',
+          content:
+            '[Document: report.pdf] (/workspace/group/attachments/report.pdf)',
         }),
       );
     });
@@ -760,7 +777,9 @@ describe('TelegramChannel', () => {
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.getFile.mockResolvedValueOnce({ file_path: 'videos/file_0.mp4' });
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'videos/file_0.mp4',
+      });
 
       const ctx = createMediaCtx({
         extra: { video: { file_id: 'vid_id' } },
@@ -777,12 +796,15 @@ describe('TelegramChannel', () => {
       );
     });
 
-    it('downloads voice message', async () => {
+    it('downloads voice message and transcribes', async () => {
       const opts = createTestOpts();
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.getFile.mockResolvedValueOnce({ file_path: 'voice/file_0.oga' });
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'voice/file_0.oga',
+      });
+      mockTranscribeAudio.mockResolvedValueOnce('hello world');
 
       const ctx = createMediaCtx({
         extra: { voice: { file_id: 'voice_id' } },
@@ -794,17 +816,20 @@ describe('TelegramChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({
-          content: '[Voice message] (/workspace/group/attachments/voice_1.oga)',
+          content: '[Voice: hello world]',
         }),
       );
     });
 
-    it('downloads audio with original filename', async () => {
+    it('downloads audio with original filename and transcribes', async () => {
       const opts = createTestOpts();
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.getFile.mockResolvedValueOnce({ file_path: 'audio/file_0.mp3' });
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'audio/file_0.mp3',
+      });
+      mockTranscribeAudio.mockResolvedValueOnce('great song');
 
       const ctx = createMediaCtx({
         extra: { audio: { file_id: 'audio_id', file_name: 'song.mp3' } },
@@ -815,7 +840,7 @@ describe('TelegramChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({
-          content: '[Audio] (/workspace/group/attachments/song.mp3)',
+          content: '[Voice: great song]',
         }),
       );
     });
@@ -882,9 +907,13 @@ describe('TelegramChannel', () => {
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.getFile.mockResolvedValueOnce({ file_path: 'documents/file_0.bin' });
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'documents/file_0.bin',
+      });
 
-      const ctx = createMediaCtx({ extra: { document: { file_id: 'doc_id' } } });
+      const ctx = createMediaCtx({
+        extra: { document: { file_id: 'doc_id' } },
+      });
       await triggerMediaMessage('message:document', ctx);
       await flushPromises();
 
@@ -892,6 +921,60 @@ describe('TelegramChannel', () => {
         'tg:100200300',
         expect.objectContaining({
           content: '[Document: file] (/workspace/group/attachments/file.bin)',
+        }),
+      );
+    });
+  });
+
+  // --- Voice transcription ---
+
+  describe('voice transcription', () => {
+    it('delivers [Voice: transcript] when transcribeAudio returns a transcript', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'voice/file_0.oga',
+      });
+      mockTranscribeAudio.mockResolvedValueOnce('meet me at noon');
+
+      const ctx = createMediaCtx({
+        extra: { voice: { file_id: 'voice_id' } },
+        messageId: 42,
+      });
+      await triggerMediaMessage('message:voice', ctx);
+      await flushPromises();
+
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({
+          content: '[Voice: meet me at noon]',
+        }),
+      );
+    });
+
+    it('delivers [Voice message - transcription failed] when transcribeAudio returns null', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      currentBot().api.getFile.mockResolvedValueOnce({
+        file_path: 'voice/file_0.oga',
+      });
+      mockTranscribeAudio.mockResolvedValueOnce(null);
+
+      const ctx = createMediaCtx({
+        extra: { voice: { file_id: 'voice_id' } },
+        messageId: 43,
+      });
+      await triggerMediaMessage('message:voice', ctx);
+      await flushPromises();
+
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'tg:100200300',
+        expect.objectContaining({
+          content: '[Voice message - transcription failed]',
         }),
       );
     });
