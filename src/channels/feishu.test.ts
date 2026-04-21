@@ -354,12 +354,22 @@ describe('downloadFeishuResource', () => {
     mockReadable.push(null);
     mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
 
-    const mockWritable = new Writable({ write(_c, _e, cb) { cb(); } });
+    const mockWritable = new Writable({
+      write(_c, _e, cb) {
+        cb();
+      },
+    });
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
-    const result = await ch.testDownload('om_001', 'key_123', 'image', 'feishu_test', 'image_001.jpg');
+    const result = await ch.testDownload(
+      'om_001',
+      'key_123',
+      'image',
+      'feishu_test',
+      'image_001.jpg',
+    );
 
     expect(result).toBe('/workspace/group/attachments/image_001.jpg');
     expect(mockMessageResourceGet).toHaveBeenCalledWith({
@@ -373,7 +383,13 @@ describe('downloadFeishuResource', () => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
-    const result = await ch.testDownload('om_001', 'key_123', 'image', 'feishu_test', 'image_001.jpg');
+    const result = await ch.testDownload(
+      'om_001',
+      'key_123',
+      'image',
+      'feishu_test',
+      'image_001.jpg',
+    );
 
     expect(result).toBeNull();
   });
@@ -383,7 +399,13 @@ describe('downloadFeishuResource', () => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
-    const result = await ch.testDownload('om_001', 'key_123', 'file', 'feishu_test', 'doc.pdf');
+    const result = await ch.testDownload(
+      'om_001',
+      'key_123',
+      'file',
+      'feishu_test',
+      'doc.pdf',
+    );
 
     expect(result).toBeNull();
   });
@@ -393,15 +415,140 @@ describe('downloadFeishuResource', () => {
     mockReadable.push(null);
     mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
 
-    const mockWritable = new Writable({ write(_c, _e, cb) { cb(); } });
+    const mockWritable = new Writable({
+      write(_c, _e, cb) {
+        cb();
+      },
+    });
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
-    const result = await ch.testDownload('om_001', 'key_123', 'file', 'feishu_test', 'evil/../../../etc/passwd');
+    const result = await ch.testDownload(
+      'om_001',
+      'key_123',
+      'file',
+      'feishu_test',
+      'evil/../../../etc/passwd',
+    );
 
     // Sanitised name should not contain slashes
     expect(result).not.toContain('..');
     expect(result).not.toContain('/etc/');
+  });
+});
+
+function makeMediaEvent(msgType: string, content: Record<string, string>, chat_id = 'oc_abc123') {
+  return {
+    message: {
+      chat_id,
+      chat_type: 'group',
+      message_type: msgType,
+      message_id: `om_media_${msgType}`,
+      create_time: '1700000000000',
+      content: JSON.stringify(content),
+      mentions: [],
+    },
+    sender: { sender_id: { open_id: 'ou_user1' } },
+  };
+}
+
+describe('image messages', () => {
+  beforeEach(() => {
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'createWriteStream').mockReturnValue(
+      new Writable({ write(_c: any, _e: any, cb: any) { cb(); } }) as any,
+    );
+  });
+
+  it('delivers image with path when download succeeds', async () => {
+    const mockStream = new Readable({ read() {} });
+    mockStream.push(null);
+    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
+
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeMediaEvent('image', { image_key: 'img_key_001' }));
+    await new Promise((r) => setTimeout(r, 10)); // allow async download
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({
+        content: expect.stringMatching(/^\[Image\] \(\/workspace\/group\/attachments\/.+\)$/),
+      }),
+    );
+    expect(mockMessageResourceGet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.objectContaining({ file_key: 'img_key_001' }),
+        params: { type: 'image' },
+      }),
+    );
+  });
+
+  it('delivers [Image] placeholder when download fails', async () => {
+    mockMessageResourceGet.mockRejectedValueOnce(new Error('download failed'));
+
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeMediaEvent('image', { image_key: 'bad_key' }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '[Image]' }),
+    );
+  });
+});
+
+describe('file messages', () => {
+  beforeEach(() => {
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'createWriteStream').mockReturnValue(
+      new Writable({ write(_c: any, _e: any, cb: any) { cb(); } }) as any,
+    );
+  });
+
+  it('delivers file with name and path when download succeeds', async () => {
+    const mockStream = new Readable({ read() {} });
+    mockStream.push(null);
+    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
+
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(
+      makeMediaEvent('file', { file_key: 'file_key_001', file_name: 'report.pdf' }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({
+        content: expect.stringMatching(/^\[File: report\.pdf\] \(\/workspace\/.+\)$/),
+      }),
+    );
+  });
+
+  it('delivers [File: name] placeholder on download failure', async () => {
+    mockMessageResourceGet.mockRejectedValueOnce(new Error('fail'));
+
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(
+      makeMediaEvent('file', { file_key: 'bad', file_name: 'doc.docx' }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '[File: doc.docx]' }),
+    );
   });
 });

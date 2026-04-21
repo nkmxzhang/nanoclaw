@@ -261,7 +261,10 @@ export class FeishuChannel implements Channel {
       fs.mkdirSync(attachDir, { recursive: true });
 
       // Strip directory components first, then replace any remaining unsafe chars
-      const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_');
+      const safeName = path
+        .basename(filename)
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/\.{2,}/g, '_');
       const destPath = path.join(attachDir, safeName);
 
       const stream = await this.client.im.messageResource.get({
@@ -280,26 +283,64 @@ export class FeishuChannel implements Channel {
 
       return `/workspace/group/attachments/${safeName}`;
     } catch (err) {
-      logger.error({ err, messageId, fileKey }, 'Failed to download Feishu resource');
+      logger.error(
+        { err, messageId, fileKey },
+        'Failed to download Feishu resource',
+      );
       return null;
     }
   }
 
-  // Stubs for media handlers — implemented in Tasks 6 and 7
   private handleImage(
-    _m: any,
-    _j: string,
-    _s: string,
-    _t: string,
-    _g: RegisteredGroup,
-  ): void {}
+    message: any,
+    chatJid: string,
+    senderId: string,
+    timestamp: string,
+    group: RegisteredGroup,
+  ): void {
+    const content = JSON.parse(message.content ?? '{}') as { image_key?: string };
+    const imageKey = content.image_key ?? '';
+    const messageId: string = message.message_id;
+    const filename = `image_${messageId}.jpg`;
+
+    this.downloadFeishuResource(messageId, imageKey, 'image', group.folder, filename)
+      .then((filePath) => {
+        const text = filePath ? `[Image] (${filePath})` : '[Image]';
+        this.deliver(chatJid, text, senderId, timestamp, messageId);
+      })
+      .catch((err: unknown) => {
+        logger.error({ err }, 'Unexpected error in image handler');
+        this.deliver(chatJid, '[Image]', senderId, timestamp, messageId);
+      });
+  }
+
   private handleFile(
-    _m: any,
-    _j: string,
-    _s: string,
-    _t: string,
-    _g: RegisteredGroup,
-  ): void {}
+    message: any,
+    chatJid: string,
+    senderId: string,
+    timestamp: string,
+    group: RegisteredGroup,
+  ): void {
+    const content = JSON.parse(message.content ?? '{}') as {
+      file_key?: string;
+      file_name?: string;
+    };
+    const fileKey = content.file_key ?? '';
+    const fileName = content.file_name ?? `file_${message.message_id}`;
+    const messageId: string = message.message_id;
+
+    this.downloadFeishuResource(messageId, fileKey, 'file', group.folder, fileName)
+      .then((filePath) => {
+        const text = filePath ? `[File: ${fileName}] (${filePath})` : `[File: ${fileName}]`;
+        this.deliver(chatJid, text, senderId, timestamp, messageId);
+      })
+      .catch((err: unknown) => {
+        logger.error({ err }, 'Unexpected error in file handler');
+        this.deliver(chatJid, `[File: ${fileName}]`, senderId, timestamp, messageId);
+      });
+  }
+
+  // Stub for audio handler — implemented in Task 7
   private handleAudio(
     _m: any,
     _j: string,
