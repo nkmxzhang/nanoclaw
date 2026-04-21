@@ -4,14 +4,24 @@ import os from 'os';
 import path from 'path';
 import { logger } from './logger.js';
 
-const WHISPER_MODEL =
-  process.env.WHISPER_MODEL ?? 'data/models/ggml-small.bin';
+const WHISPER_MODEL = process.env.WHISPER_MODEL ?? 'data/models/ggml-small.bin';
 
 function convertToWav(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(
       'ffmpeg',
-      ['-i', inputPath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', outputPath, '-y'],
+      [
+        '-i',
+        inputPath,
+        '-ar',
+        '16000',
+        '-ac',
+        '1',
+        '-c:a',
+        'pcm_s16le',
+        outputPath,
+        '-y',
+      ],
       { timeout: 30_000 },
       (err) => {
         if (err) reject(err);
@@ -21,7 +31,9 @@ function convertToWav(inputPath: string, outputPath: string): Promise<void> {
   });
 }
 
-export async function transcribeAudio(filePath: string): Promise<string | null> {
+export async function transcribeAudio(
+  filePath: string,
+): Promise<string | null> {
   if (!fs.existsSync(WHISPER_MODEL)) {
     logger.warn({ model: WHISPER_MODEL }, 'Whisper model file not found');
     return null;
@@ -46,7 +58,9 @@ export async function transcribeAudio(filePath: string): Promise<string | null> 
         (err, stdout) => {
           if (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-              logger.warn('whisper-cli not found — voice transcription unavailable');
+              logger.warn(
+                'whisper-cli not found — voice transcription unavailable',
+              );
             } else {
               logger.error({ err }, 'Transcription failed');
             }
@@ -68,7 +82,11 @@ export async function transcribeAudio(filePath: string): Promise<string | null> 
     return null;
   } finally {
     if (needsConversion) {
-      try { fs.unlinkSync(wavPath); } catch { /* already gone */ }
+      try {
+        fs.unlinkSync(wavPath);
+      } catch {
+        /* already gone */
+      }
     }
   }
 }
