@@ -4,7 +4,9 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 // Mock transcription module
 const mockTranscribeAudio = vi.hoisted(() => vi.fn());
-vi.mock('../transcription.js', () => ({ transcribeAudio: mockTranscribeAudio }));
+vi.mock('../transcription.js', () => ({
+  transcribeAudio: mockTranscribeAudio,
+}));
 
 // Mock registry (registerChannel runs at import time)
 vi.mock('./registry.js', () => ({ registerChannel: vi.fn() }));
@@ -946,6 +948,9 @@ describe('TelegramChannel', () => {
       await triggerMediaMessage('message:voice', ctx);
       await flushPromises();
 
+      expect(mockTranscribeAudio).toHaveBeenCalledWith(
+        '/tmp/test-groups/test-group/attachments/voice_42.oga',
+      );
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({

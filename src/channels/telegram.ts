@@ -282,8 +282,8 @@ export class TelegramChannel implements Channel {
         const filename =
           opts.filename ||
           `${placeholder.replace(/[\[\] ]/g, '').toLowerCase()}_${msgId}`;
-        this.downloadFile(opts.fileId, group.folder, filename).then(
-          async (filePath) => {
+        this.downloadFile(opts.fileId, group.folder, filename)
+          .then(async (filePath) => {
             if (filePath && opts?.transcribe) {
               const attachFilename = filePath.split('/').pop()!;
               const hostPath = path.join(
@@ -302,8 +302,11 @@ export class TelegramChannel implements Channel {
             } else {
               deliver(`${placeholder}${caption}`);
             }
-          },
-        );
+          })
+          .catch((err: unknown) => {
+            logger.error({ err }, 'Failed to process downloaded media');
+            deliver(`${placeholder}${caption}`);
+          });
         return;
       }
 
