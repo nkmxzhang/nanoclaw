@@ -149,3 +149,176 @@ describe('connect()', () => {
     expect(ch.isConnected()).toBe(true);
   });
 });
+
+// --- Helper to simulate an inbound event ---
+
+async function triggerMessage(data: unknown) {
+  await capturedHandlers['im.message.receive_v1']!(data);
+}
+
+function makeTextEvent(overrides: {
+  chat_id?: string;
+  chat_type?: string;
+  text?: string;
+  mentions?: unknown[];
+  message_id?: string;
+}) {
+  return {
+    message: {
+      chat_id: overrides.chat_id ?? 'oc_abc123',
+      chat_type: overrides.chat_type ?? 'group',
+      message_type: 'text',
+      message_id: overrides.message_id ?? 'om_001',
+      create_time: '1700000000000',
+      content: JSON.stringify({ text: overrides.text ?? 'hello' }),
+      mentions: overrides.mentions ?? [],
+    },
+    sender: {
+      sender_id: { open_id: 'ou_user1' },
+    },
+  };
+}
+
+// --- Text message handling ---
+
+describe('text messages', () => {
+  it('delivers a text message to a registered group', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeTextEvent({ text: 'hello world' }));
+
+    expect(opts.onMessage).toHaveBeenCalledWith('fs:oc_abc123', expect.objectContaining({
+      id: 'om_001',
+      chat_jid: 'fs:oc_abc123',
+      sender: 'ou_user1',
+      content: 'hello world',
+      is_from_me: false,
+    }));
+  });
+
+  it('skips messages from unregistered chats', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeTextEvent({ chat_id: 'oc_unknown', text: 'hi' }));
+
+    expect(opts.onMessage).not.toHaveBeenCalled();
+  });
+
+  it('calls onChatMetadata for every message', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeTextEvent({ text: 'hi' }));
+
+    expect(opts.onChatMetadata).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.any(String),
+      undefined,
+      'feishu',
+      true,
+    );
+  });
+
+  it('injects trigger when bot is @mentioned and trigger not present', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    // botOpenId is 'ou_bot123' (set by mockRequest)
+    await triggerMessage(
+      makeTextEvent({
+        text: 'can you help me @_user_1',
+        mentions: [{ id: { open_id: 'ou_bot123' } }],
+      }),
+    );
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '@Andy can you help me' }),
+    );
+  });
+
+  it('does not inject trigger when content already matches', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(
+      makeTextEvent({
+        text: '@Andy hello @_user_1',
+        mentions: [{ id: { open_id: 'ou_bot123' } }],
+      }),
+    );
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '@Andy hello' }),
+    );
+  });
+});
+
+// --- /chatid command ---
+
+describe('/chatid command', () => {
+  it('replies with the JID and does not call onMessage', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage(makeTextEvent({ text: '/chatid' }));
+
+    expect(mockMessageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { receive_id_type: 'chat_id' },
+        data: expect.objectContaining({ receive_id: 'oc_abc123' }),
+      }),
+    );
+    expect(opts.onMessage).not.toHaveBeenCalled();
+  });
+});
+
+// --- post (rich text) message ---
+
+describe('post messages', () => {
+  it('concatenates text blocks from rich text content', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    const postContent = {
+      zh_cn: {
+        title: 'Test',
+        content: [
+          [
+            { tag: 'text', text: 'Hello ' },
+            { tag: 'at', user_id: 'ou_bot123' },
+            { tag: 'text', text: 'world' },
+          ],
+        ],
+      },
+    };
+
+    await triggerMessage({
+      message: {
+        chat_id: 'oc_abc123',
+        chat_type: 'group',
+        message_type: 'post',
+        message_id: 'om_002',
+        create_time: '1700000000000',
+        content: JSON.stringify(postContent),
+        mentions: [],
+      },
+      sender: { sender_id: { open_id: 'ou_user1' } },
+    });
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: 'Hello world' }),
+    );
+  });
+});
