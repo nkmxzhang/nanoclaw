@@ -6,10 +6,12 @@ const mockRequest = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ data: { bot: { open_id: 'ou_bot123' } } }),
 );
 const mockMessageCreate = vi.hoisted(() => vi.fn().mockResolvedValue({}));
-const mockMessageResourceGet = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const mockMessageResourceGet = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(null),
+);
 const mockWsStart = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const capturedHandlers = vi.hoisted(
-  () => ({} as Record<string, (data: unknown) => Promise<void>>),
+  () => ({}) as Record<string, (data: unknown) => Promise<void>>,
 );
 
 // --- Module mocks ---
@@ -29,12 +31,14 @@ vi.mock('@larksuiteoapi/node-sdk', () => ({
   }),
   EventDispatcher: vi.fn().mockImplementation(function () {
     return {
-      register: vi.fn().mockImplementation(
-        (handlers: Record<string, (data: unknown) => Promise<void>>) => {
-          Object.assign(capturedHandlers, handlers);
-          return { register: vi.fn() };
-        },
-      ),
+      register: vi
+        .fn()
+        .mockImplementation(
+          (handlers: Record<string, (data: unknown) => Promise<void>>) => {
+            Object.assign(capturedHandlers, handlers);
+            return { register: vi.fn() };
+          },
+        ),
     };
   }),
   LogLevel: { error: 'error' },
@@ -51,7 +55,9 @@ vi.mock('../logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock('../group-folder.js', () => ({
-  resolveGroupFolderPath: vi.fn((folder: string) => `/tmp/test-groups/${folder}`),
+  resolveGroupFolderPath: vi.fn(
+    (folder: string) => `/tmp/test-groups/${folder}`,
+  ),
 }));
 vi.mock('../transcription.js', () => ({
   transcribeAudio: vi.fn().mockResolvedValue('hello world'),
@@ -112,5 +118,34 @@ describe('ownsJid', () => {
     expect(ch.ownsJid('tg:123')).toBe(false);
     expect(ch.ownsJid('wa:123@s.whatsapp.net')).toBe(false);
     expect(ch.ownsJid('')).toBe(false);
+  });
+});
+
+// --- connect() ---
+
+describe('connect()', () => {
+  it('fetches bot open_id and starts WSClient', async () => {
+    const ch = new FeishuChannel('myAppId', 'mySecret', makeOpts());
+    await ch.connect();
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'GET', url: '/open-apis/bot/v3/info' }),
+    );
+    expect(mockWsStart).toHaveBeenCalledOnce();
+    expect(ch.isConnected()).toBe(true);
+  });
+
+  it('registers im.message.receive_v1 event handler', async () => {
+    const ch = new FeishuChannel('myAppId', 'mySecret', makeOpts());
+    await ch.connect();
+
+    expect(capturedHandlers['im.message.receive_v1']).toBeTypeOf('function');
+  });
+
+  it('continues if bot info fetch fails', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('network error'));
+    const ch = new FeishuChannel('myAppId', 'mySecret', makeOpts());
+    await expect(ch.connect()).resolves.not.toThrow();
+    expect(ch.isConnected()).toBe(true);
   });
 });

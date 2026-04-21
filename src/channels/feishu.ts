@@ -43,8 +43,42 @@ export class FeishuChannel implements Channel {
   }
 
   async connect(): Promise<void> {
-    // TODO: implement in Task 3
+    // Fetch bot's own open_id for @mention detection
+    try {
+      const resp = await (this.client as any).request({
+        method: 'GET',
+        url: '/open-apis/bot/v3/info',
+        data: {},
+        params: {},
+      });
+      this.botOpenId = (resp as any)?.data?.bot?.open_id ?? '';
+      logger.info({ botOpenId: this.botOpenId }, 'Feishu bot info fetched');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to fetch Feishu bot info — @mention injection disabled');
+    }
+
+    const eventDispatcher = new lark.EventDispatcher({}).register({
+      'im.message.receive_v1': async (data: unknown) => {
+        try {
+          await this.handleInboundMessage(data);
+        } catch (err) {
+          logger.error({ err }, 'Error processing Feishu inbound message');
+        }
+      },
+    });
+
+    this.wsClient = new lark.WSClient({ appId: this.appId, appSecret: this.appSecret });
+    this.wsClient.start({ eventDispatcher }).catch((err: unknown) => {
+      logger.error({ err }, 'Feishu WSClient error');
+    });
+
+    logger.info('Feishu WebSocket client started');
+    console.log('\n  Feishu bot connected via WebSocket long-connection');
+    console.log("  Send /chatid to the bot to get a chat's registration ID\n");
   }
+
+  // Stub — implemented in Task 4
+  private async handleInboundMessage(_data: unknown): Promise<void> {}
 
   async sendMessage(_jid: string, _text: string): Promise<void> {
     // TODO: implement in Task 8
@@ -76,7 +110,9 @@ registerChannel('feishu', (opts: ChannelOpts) => {
   const appSecret =
     process.env.FEISHU_APP_SECRET || envVars.FEISHU_APP_SECRET || '';
   if (!appId || !appSecret) {
-    logger.warn('Feishu: FEISHU_APP_ID or FEISHU_APP_SECRET not set — channel disabled');
+    logger.warn(
+      'Feishu: FEISHU_APP_ID or FEISHU_APP_SECRET not set — channel disabled',
+    );
     return null;
   }
   return new FeishuChannel(appId, appSecret, opts);
