@@ -33,7 +33,7 @@ describe('transcribeAudio', () => {
 
   it('returns transcript on success', async () => {
     vi.mocked(childProcess.execFile).mockImplementation(
-      (_cmd: string, _args: readonly string[], _opts: object, cb: any) => {
+      (_cmd: string, _args: readonly string[] | null | undefined, _opts: object | null | undefined, cb: any) => {
         cb(null, '  Hello world  \n', '');
         return {} as any;
       },
@@ -56,7 +56,7 @@ describe('transcribeAudio', () => {
     const err: any = new Error('not found');
     err.code = 'ENOENT';
     vi.mocked(childProcess.execFile).mockImplementation(
-      (_cmd: string, _args: readonly string[], _opts: object, cb: any) => {
+      (_cmd: string, _args: readonly string[] | null | undefined, _opts: object | null | undefined, cb: any) => {
         cb(err, '', '');
         return {} as any;
       },
@@ -71,7 +71,7 @@ describe('transcribeAudio', () => {
   it('returns null when transcription process fails', async () => {
     const err = new Error('process error');
     vi.mocked(childProcess.execFile).mockImplementation(
-      (_cmd: string, _args: readonly string[], _opts: object, cb: any) => {
+      (_cmd: string, _args: readonly string[] | null | undefined, _opts: object | null | undefined, cb: any) => {
         cb(err, '', '');
         return {} as any;
       },
@@ -86,7 +86,7 @@ describe('transcribeAudio', () => {
 
   it('returns null for empty transcript output', async () => {
     vi.mocked(childProcess.execFile).mockImplementation(
-      (_cmd: string, _args: readonly string[], _opts: object, cb: any) => {
+      (_cmd: string, _args: readonly string[] | null | undefined, _opts: object | null | undefined, cb: any) => {
         cb(null, '   \n  ', '');
         return {} as any;
       },
