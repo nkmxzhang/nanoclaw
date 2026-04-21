@@ -38,13 +38,13 @@ describe('transcribeAudio', () => {
         return {} as any;
       },
     );
-    const result = await transcribeAudio('/tmp/voice.ogg');
+    const result = await transcribeAudio('/tmp/voice.wav');
     expect(result).toBe('Hello world');
   });
 
   it('returns null when model file does not exist', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    const result = await transcribeAudio('/tmp/voice.ogg');
+    const result = await transcribeAudio('/tmp/voice.wav');
     expect(result).toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ model: expect.any(String) }),
@@ -61,7 +61,7 @@ describe('transcribeAudio', () => {
         return {} as any;
       },
     );
-    const result = await transcribeAudio('/tmp/voice.ogg');
+    const result = await transcribeAudio('/tmp/voice.wav');
     expect(result).toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
       'whisper-cli not found — voice transcription unavailable',
@@ -76,7 +76,7 @@ describe('transcribeAudio', () => {
         return {} as any;
       },
     );
-    const result = await transcribeAudio('/tmp/voice.ogg');
+    const result = await transcribeAudio('/tmp/voice.wav');
     expect(result).toBeNull();
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ err }),
@@ -91,7 +91,7 @@ describe('transcribeAudio', () => {
         return {} as any;
       },
     );
-    const result = await transcribeAudio('/tmp/voice.ogg');
+    const result = await transcribeAudio('/tmp/voice.wav');
     expect(result).toBeNull();
   });
 });
