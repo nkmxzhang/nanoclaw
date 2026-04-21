@@ -688,3 +688,78 @@ describe('sendMessage()', () => {
     await expect(ch.sendMessage('fs:oc_abc123', 'hi')).resolves.not.toThrow();
   });
 });
+
+describe('disconnect()', () => {
+  it('sets isConnected to false', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await ch.connect();
+    expect(ch.isConnected()).toBe(true);
+
+    await ch.disconnect();
+    expect(ch.isConnected()).toBe(false);
+  });
+
+  it('is idempotent', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await ch.disconnect();
+    await ch.disconnect();
+    expect(ch.isConnected()).toBe(false);
+  });
+});
+
+describe('setTyping()', () => {
+  it('resolves without error (no-op)', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await expect(ch.setTyping('fs:oc_abc123', true)).resolves.not.toThrow();
+  });
+});
+
+describe('sticker and unknown message types', () => {
+  it('delivers [Sticker] placeholder', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage({
+      message: {
+        chat_id: 'oc_abc123',
+        chat_type: 'group',
+        message_type: 'sticker',
+        message_id: 'om_003',
+        create_time: '1700000000000',
+        content: '{}',
+        mentions: [],
+      },
+      sender: { sender_id: { open_id: 'ou_user1' } },
+    });
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '[Sticker]' }),
+    );
+  });
+
+  it('delivers [Unsupported message type: ...] for unknown types', async () => {
+    const opts = makeOpts();
+    const ch = new FeishuChannel('id', 'secret', opts);
+    await ch.connect();
+
+    await triggerMessage({
+      message: {
+        chat_id: 'oc_abc123',
+        chat_type: 'group',
+        message_type: 'system',
+        message_id: 'om_004',
+        create_time: '1700000000000',
+        content: '{}',
+        mentions: [],
+      },
+      sender: { sender_id: { open_id: 'ou_user1' } },
+    });
+
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({ content: '[Unsupported message type: system]' }),
+    );
+  });
+});
