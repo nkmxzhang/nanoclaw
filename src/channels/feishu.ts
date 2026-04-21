@@ -267,19 +267,15 @@ export class FeishuChannel implements Channel {
         .replace(/\.{2,}/g, '_');
       const destPath = path.join(attachDir, safeName);
 
-      const stream = await this.client.im.messageResource.get({
+      const response = await this.client.im.messageResource.get({
         path: { message_id: messageId, file_key: fileKey },
         params: { type },
       } as any);
 
-      if (!stream) return null;
+      if (!response) return null;
 
-      await new Promise<void>((resolve, reject) => {
-        const writeStream = fs.createWriteStream(destPath);
-        (stream as unknown as NodeJS.ReadableStream).pipe(writeStream);
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-      });
+      // SDK returns { writeFile, getReadableStream, headers } — not a raw stream
+      await (response as any).writeFile(destPath);
 
       return `/workspace/group/attachments/${safeName}`;
     } catch (err) {

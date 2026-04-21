@@ -6,8 +6,9 @@ const mockRequest = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ data: { bot: { open_id: 'ou_bot123' } } }),
 );
 const mockMessageCreate = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const mockWriteFile = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockMessageResourceGet = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(null),
+  vi.fn().mockResolvedValue({ writeFile: mockWriteFile }),
 );
 const mockWsStart = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const capturedHandlers = vi.hoisted(
@@ -66,7 +67,6 @@ vi.mock('../transcription.js', () => ({
 // --- Test helpers ---
 
 import fs from 'fs';
-import { Readable, Writable } from 'stream';
 import { FeishuChannel } from './feishu.js';
 import { registerChannel } from './registry.js';
 import { transcribeAudio } from '../transcription.js';
@@ -89,7 +89,8 @@ beforeEach(() => {
   Object.keys(capturedHandlers).forEach((k) => delete capturedHandlers[k]);
   mockRequest.mockResolvedValue({ data: { bot: { open_id: 'ou_bot123' } } });
   mockMessageCreate.mockResolvedValue({});
-  mockMessageResourceGet.mockResolvedValue(null);
+  mockWriteFile.mockResolvedValue(undefined);
+  mockMessageResourceGet.mockResolvedValue({ writeFile: mockWriteFile });
   mockWsStart.mockResolvedValue(undefined);
 });
 
@@ -349,18 +350,7 @@ class TestableFeishuChannel extends FeishuChannel {
 
 describe('downloadFeishuResource', () => {
   it('returns container path on successful download', async () => {
-    const mockReadable = new Readable({ read() {} });
-    mockReadable.push(Buffer.from('fake data'));
-    mockReadable.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
-
-    const mockWritable = new Writable({
-      write(_c, _e, cb) {
-        cb();
-      },
-    });
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
     const result = await ch.testDownload(
@@ -376,9 +366,12 @@ describe('downloadFeishuResource', () => {
       path: { message_id: 'om_001', file_key: 'key_123' },
       params: { type: 'image' },
     });
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      expect.stringContaining('image_001.jpg'),
+    );
   });
 
-  it('returns null when SDK returns no stream', async () => {
+  it('returns null when SDK returns no response', async () => {
     mockMessageResourceGet.mockResolvedValueOnce(null);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
 
@@ -410,18 +403,24 @@ describe('downloadFeishuResource', () => {
     expect(result).toBeNull();
   });
 
-  it('sanitises dangerous characters in filename', async () => {
-    const mockReadable = new Readable({ read() {} });
-    mockReadable.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
-
-    const mockWritable = new Writable({
-      write(_c, _e, cb) {
-        cb();
-      },
-    });
+  it('returns null when writeFile rejects', async () => {
+    mockWriteFile.mockRejectedValueOnce(new Error('write error'));
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
+
+    const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
+    const result = await ch.testDownload(
+      'om_001',
+      'key_123',
+      'file',
+      'feishu_test',
+      'doc.pdf',
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('sanitises dangerous characters in filename', async () => {
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
 
     const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
     const result = await ch.testDownload(
@@ -460,20 +459,9 @@ function makeMediaEvent(
 describe('image messages', () => {
   beforeEach(() => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'createWriteStream').mockReturnValue(
-      new Writable({
-        write(_c: any, _e: any, cb: any) {
-          cb();
-        },
-      }) as any,
-    );
   });
 
   it('delivers image with path when download succeeds', async () => {
-    const mockStream = new Readable({ read() {} });
-    mockStream.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
-
     const opts = makeOpts();
     const ch = new FeishuChannel('id', 'secret', opts);
     await ch.connect();
@@ -517,20 +505,9 @@ describe('image messages', () => {
 describe('file messages', () => {
   beforeEach(() => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'createWriteStream').mockReturnValue(
-      new Writable({
-        write(_c: any, _e: any, cb: any) {
-          cb();
-        },
-      }) as any,
-    );
   });
 
   it('delivers file with name and path when download succeeds', async () => {
-    const mockStream = new Readable({ read() {} });
-    mockStream.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
-
     const opts = makeOpts();
     const ch = new FeishuChannel('id', 'secret', opts);
     await ch.connect();
@@ -575,19 +552,9 @@ describe('file messages', () => {
 describe('audio messages', () => {
   beforeEach(() => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'createWriteStream').mockReturnValue(
-      new Writable({
-        write(_c: any, _e: any, cb: any) {
-          cb();
-        },
-      }) as any,
-    );
   });
 
   it('delivers transcription when audio download and transcription succeed', async () => {
-    const mockStream = new Readable({ read() {} });
-    mockStream.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
     vi.mocked(transcribeAudio).mockResolvedValueOnce('hello feishu');
 
     const opts = makeOpts();
@@ -606,9 +573,6 @@ describe('audio messages', () => {
   });
 
   it('delivers transcription-failed placeholder when transcribeAudio returns null', async () => {
-    const mockStream = new Readable({ read() {} });
-    mockStream.push(null);
-    mockMessageResourceGet.mockResolvedValueOnce(mockStream);
     vi.mocked(transcribeAudio).mockResolvedValueOnce(null);
 
     const opts = makeOpts();
