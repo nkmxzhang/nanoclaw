@@ -189,13 +189,16 @@ describe('text messages', () => {
 
     await triggerMessage(makeTextEvent({ text: 'hello world' }));
 
-    expect(opts.onMessage).toHaveBeenCalledWith('fs:oc_abc123', expect.objectContaining({
-      id: 'om_001',
-      chat_jid: 'fs:oc_abc123',
-      sender: 'ou_user1',
-      content: 'hello world',
-      is_from_me: false,
-    }));
+    expect(opts.onMessage).toHaveBeenCalledWith(
+      'fs:oc_abc123',
+      expect.objectContaining({
+        id: 'om_001',
+        chat_jid: 'fs:oc_abc123',
+        sender: 'ou_user1',
+        content: 'hello world',
+        is_from_me: false,
+      }),
+    );
   });
 
   it('skips messages from unregistered chats', async () => {
@@ -320,5 +323,85 @@ describe('post messages', () => {
       'fs:oc_abc123',
       expect.objectContaining({ content: 'Hello world' }),
     );
+  });
+});
+
+// --- downloadFeishuResource (tested indirectly via handleImage in Task 6) ---
+// Direct test via a subclass that exposes the private method
+
+class TestableFeishuChannel extends FeishuChannel {
+  async testDownload(
+    messageId: string,
+    fileKey: string,
+    type: 'image' | 'file',
+    groupFolder: string,
+    filename: string,
+  ) {
+    return (this as any).downloadFeishuResource(
+      messageId,
+      fileKey,
+      type,
+      groupFolder,
+      filename,
+    );
+  }
+}
+
+describe('downloadFeishuResource', () => {
+  it('returns container path on successful download', async () => {
+    const mockReadable = new Readable({ read() {} });
+    mockReadable.push(Buffer.from('fake data'));
+    mockReadable.push(null);
+    mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
+
+    const mockWritable = new Writable({ write(_c, _e, cb) { cb(); } });
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
+
+    const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
+    const result = await ch.testDownload('om_001', 'key_123', 'image', 'feishu_test', 'image_001.jpg');
+
+    expect(result).toBe('/workspace/group/attachments/image_001.jpg');
+    expect(mockMessageResourceGet).toHaveBeenCalledWith({
+      path: { message_id: 'om_001', file_key: 'key_123' },
+      params: { type: 'image' },
+    });
+  });
+
+  it('returns null when SDK returns no stream', async () => {
+    mockMessageResourceGet.mockResolvedValueOnce(null);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+
+    const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
+    const result = await ch.testDownload('om_001', 'key_123', 'image', 'feishu_test', 'image_001.jpg');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null and logs on SDK error', async () => {
+    mockMessageResourceGet.mockRejectedValueOnce(new Error('API error'));
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+
+    const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
+    const result = await ch.testDownload('om_001', 'key_123', 'file', 'feishu_test', 'doc.pdf');
+
+    expect(result).toBeNull();
+  });
+
+  it('sanitises dangerous characters in filename', async () => {
+    const mockReadable = new Readable({ read() {} });
+    mockReadable.push(null);
+    mockMessageResourceGet.mockResolvedValueOnce(mockReadable);
+
+    const mockWritable = new Writable({ write(_c, _e, cb) { cb(); } });
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'createWriteStream').mockReturnValue(mockWritable as any);
+
+    const ch = new TestableFeishuChannel('id', 'secret', makeOpts());
+    const result = await ch.testDownload('om_001', 'key_123', 'file', 'feishu_test', 'evil/../../../etc/passwd');
+
+    // Sanitised name should not contain slashes
+    expect(result).not.toContain('..');
+    expect(result).not.toContain('/etc/');
   });
 });

@@ -105,14 +105,20 @@ export class FeishuChannel implements Channel {
     if (msgType === 'text') {
       const parsed = JSON.parse(message.content ?? '{}') as { text?: string };
       if ((parsed.text ?? '').trim() === '/chatid') {
-        await this.sendMessage(chatJid, `Chat ID: \`${chatJid}\`\nType: ${message.chat_type}`);
+        await this.sendMessage(
+          chatJid,
+          `Chat ID: \`${chatJid}\`\nType: ${message.chat_type}`,
+        );
         return;
       }
     }
 
     const group = this.opts.registeredGroups()[chatJid];
     if (!group) {
-      logger.debug({ chatJid }, 'Message from unregistered Feishu chat — ignoring');
+      logger.debug(
+        { chatJid },
+        'Message from unregistered Feishu chat — ignoring',
+      );
       return;
     }
 
@@ -120,10 +126,24 @@ export class FeishuChannel implements Channel {
 
     switch (msgType) {
       case 'text':
-        this.handleText(message, chatJid, senderId, timestamp, messageId, mentions);
+        this.handleText(
+          message,
+          chatJid,
+          senderId,
+          timestamp,
+          messageId,
+          mentions,
+        );
         break;
       case 'post':
-        this.handlePost(message, chatJid, senderId, timestamp, messageId, mentions);
+        this.handlePost(
+          message,
+          chatJid,
+          senderId,
+          timestamp,
+          messageId,
+          mentions,
+        );
         break;
       case 'image':
         this.handleImage(message, chatJid, senderId, timestamp, group);
@@ -138,7 +158,13 @@ export class FeishuChannel implements Channel {
         this.deliver(chatJid, '[Sticker]', senderId, timestamp, messageId);
         break;
       default:
-        this.deliver(chatJid, `[Unsupported message type: ${msgType}]`, senderId, timestamp, messageId);
+        this.deliver(
+          chatJid,
+          `[Unsupported message type: ${msgType}]`,
+          senderId,
+          timestamp,
+          messageId,
+        );
     }
   }
 
@@ -177,9 +203,14 @@ export class FeishuChannel implements Channel {
     mentions: unknown[],
   ): void {
     // post content: { "zh_cn": { "title": "...", "content": [[{tag, text}, ...], ...] } }
-    const contentObj = JSON.parse(message.content ?? '{}') as Record<string, any>;
+    const contentObj = JSON.parse(message.content ?? '{}') as Record<
+      string,
+      any
+    >;
     const lang: any =
-      contentObj['zh_cn'] ?? contentObj['en_us'] ?? Object.values(contentObj)[0];
+      contentObj['zh_cn'] ??
+      contentObj['en_us'] ??
+      Object.values(contentObj)[0];
     if (!lang) {
       this.deliver(chatJid, '[Post]', senderId, timestamp, messageId);
       return;
@@ -217,10 +248,65 @@ export class FeishuChannel implements Channel {
     logger.info({ chatJid, sender }, 'Feishu message delivered');
   }
 
+  private async downloadFeishuResource(
+    messageId: string,
+    fileKey: string,
+    type: 'image' | 'file',
+    groupFolder: string,
+    filename: string,
+  ): Promise<string | null> {
+    try {
+      const groupDir = resolveGroupFolderPath(groupFolder);
+      const attachDir = path.join(groupDir, 'attachments');
+      fs.mkdirSync(attachDir, { recursive: true });
+
+      // Strip directory components first, then replace any remaining unsafe chars
+      const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_');
+      const destPath = path.join(attachDir, safeName);
+
+      const stream = await this.client.im.messageResource.get({
+        path: { message_id: messageId, file_key: fileKey },
+        params: { type },
+      } as any);
+
+      if (!stream) return null;
+
+      await new Promise<void>((resolve, reject) => {
+        const writeStream = fs.createWriteStream(destPath);
+        (stream as unknown as NodeJS.ReadableStream).pipe(writeStream);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+
+      return `/workspace/group/attachments/${safeName}`;
+    } catch (err) {
+      logger.error({ err, messageId, fileKey }, 'Failed to download Feishu resource');
+      return null;
+    }
+  }
+
   // Stubs for media handlers — implemented in Tasks 6 and 7
-  private handleImage(_m: any, _j: string, _s: string, _t: string, _g: RegisteredGroup): void {}
-  private handleFile(_m: any, _j: string, _s: string, _t: string, _g: RegisteredGroup): void {}
-  private handleAudio(_m: any, _j: string, _s: string, _t: string, _g: RegisteredGroup): void {}
+  private handleImage(
+    _m: any,
+    _j: string,
+    _s: string,
+    _t: string,
+    _g: RegisteredGroup,
+  ): void {}
+  private handleFile(
+    _m: any,
+    _j: string,
+    _s: string,
+    _t: string,
+    _g: RegisteredGroup,
+  ): void {}
+  private handleAudio(
+    _m: any,
+    _j: string,
+    _s: string,
+    _t: string,
+    _g: RegisteredGroup,
+  ): void {}
 
   async sendMessage(jid: string, text: string): Promise<void> {
     const chatId = jid.replace(/^fs:/, '');
