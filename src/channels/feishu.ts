@@ -369,12 +369,20 @@ export class FeishuChannel implements Channel {
     timestamp: string,
     group: RegisteredGroup,
   ): void {
-    const content = JSON.parse(message.content ?? '{}') as { file_key?: string };
+    const content = JSON.parse(message.content ?? '{}') as {
+      file_key?: string;
+    };
     const fileKey = content.file_key ?? '';
     const messageId: string = message.message_id;
     const filename = `audio_${messageId}.opus`;
 
-    this.downloadFeishuResource(messageId, fileKey, 'file', group.folder, filename)
+    this.downloadFeishuResource(
+      messageId,
+      fileKey,
+      'file',
+      group.folder,
+      filename,
+    )
       .then(async (filePath) => {
         if (!filePath) {
           this.deliver(
@@ -412,18 +420,25 @@ export class FeishuChannel implements Channel {
 
   async sendMessage(jid: string, text: string): Promise<void> {
     const chatId = jid.replace(/^fs:/, '');
-    try {
-      await this.client.im.message.create({
-        params: { receive_id_type: 'chat_id' },
-        data: {
-          receive_id: chatId,
-          msg_type: 'text',
-          content: JSON.stringify({ text }),
-        },
-      } as any);
-    } catch (err) {
-      logger.error({ jid, err }, 'Failed to send Feishu message');
+    const MAX_LENGTH = 4000;
+
+    for (let i = 0; i < text.length; i += MAX_LENGTH) {
+      const chunk = text.slice(i, i + MAX_LENGTH);
+      try {
+        await this.client.im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: chatId,
+            msg_type: 'text',
+            content: JSON.stringify({ text: chunk }),
+          },
+        } as any);
+      } catch (err) {
+        logger.error({ jid, err }, 'Failed to send Feishu message');
+        return;
+      }
     }
+    logger.info({ jid, length: text.length }, 'Feishu message sent');
   }
 
   isConnected(): boolean {

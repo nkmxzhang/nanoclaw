@@ -576,7 +576,11 @@ describe('audio messages', () => {
   beforeEach(() => {
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'createWriteStream').mockReturnValue(
-      new Writable({ write(_c: any, _e: any, cb: any) { cb(); } }) as any,
+      new Writable({
+        write(_c: any, _e: any, cb: any) {
+          cb();
+        },
+      }) as any,
     );
   });
 
@@ -590,7 +594,9 @@ describe('audio messages', () => {
     const ch = new FeishuChannel('id', 'secret', opts);
     await ch.connect();
 
-    await triggerMessage(makeMediaEvent('audio', { file_key: 'audio_key_001' }));
+    await triggerMessage(
+      makeMediaEvent('audio', { file_key: 'audio_key_001' }),
+    );
     await new Promise((r) => setTimeout(r, 20));
 
     expect(opts.onMessage).toHaveBeenCalledWith(
@@ -609,12 +615,16 @@ describe('audio messages', () => {
     const ch = new FeishuChannel('id', 'secret', opts);
     await ch.connect();
 
-    await triggerMessage(makeMediaEvent('audio', { file_key: 'audio_key_001' }));
+    await triggerMessage(
+      makeMediaEvent('audio', { file_key: 'audio_key_001' }),
+    );
     await new Promise((r) => setTimeout(r, 20));
 
     expect(opts.onMessage).toHaveBeenCalledWith(
       'fs:oc_abc123',
-      expect.objectContaining({ content: '[Voice message - transcription failed]' }),
+      expect.objectContaining({
+        content: '[Voice message - transcription failed]',
+      }),
     );
   });
 
@@ -630,7 +640,51 @@ describe('audio messages', () => {
 
     expect(opts.onMessage).toHaveBeenCalledWith(
       'fs:oc_abc123',
-      expect.objectContaining({ content: '[Voice message - transcription failed]' }),
+      expect.objectContaining({
+        content: '[Voice message - transcription failed]',
+      }),
     );
+  });
+});
+
+describe('sendMessage()', () => {
+  it('sends a short message as a single API call', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await ch.sendMessage('fs:oc_abc123', 'Hello Feishu!');
+
+    expect(mockMessageCreate).toHaveBeenCalledOnce();
+    expect(mockMessageCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: 'chat_id' },
+      data: {
+        receive_id: 'oc_abc123',
+        msg_type: 'text',
+        content: JSON.stringify({ text: 'Hello Feishu!' }),
+      },
+    });
+  });
+
+  it('strips the fs: prefix before sending', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await ch.sendMessage('fs:p2p_xyz789', 'DM test');
+
+    expect(mockMessageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ receive_id: 'p2p_xyz789' }),
+      }),
+    );
+  });
+
+  it('splits messages longer than 4000 chars into multiple sends', async () => {
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    const longText = 'x'.repeat(9001);
+    await ch.sendMessage('fs:oc_abc123', longText);
+
+    expect(mockMessageCreate).toHaveBeenCalledTimes(3); // 9001 / 4000 = ceil 3
+  });
+
+  it('logs an error and stops on API failure', async () => {
+    mockMessageCreate.mockRejectedValueOnce(new Error('rate limited'));
+    const ch = new FeishuChannel('id', 'secret', makeOpts());
+    await expect(ch.sendMessage('fs:oc_abc123', 'hi')).resolves.not.toThrow();
   });
 });
