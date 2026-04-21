@@ -723,7 +723,9 @@ describe('sticker and unknown message types', () => {
 
     expect(opts.onMessage).toHaveBeenCalledWith(
       'fs:oc_abc123',
-      expect.objectContaining({ content: '[Unsupported message type: system]' }),
+      expect.objectContaining({
+        content: '[Unsupported message type: system]',
+      }),
     );
   });
 });
